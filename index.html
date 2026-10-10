@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Resumos em Mídia</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1f5f8b">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root { --bg:#ffffff; --fg:#1d2733; --muted:#5d6b7a; --line:#d9e0e7; --accent:#1f5f8b; --accent-fg:#ffffff; --hover:#eef3f7; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#161b21; --fg:#e6ebf0; --muted:#97a4b2; --line:#2b3540; --accent:#6bb3e0; --accent-fg:#0f1419; --hover:#1f2730; }
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui, -apple-system, sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:16px; padding-top:calc(16px + env(safe-area-inset-top, 0px)); padding-bottom:calc(16px + env(safe-area-inset-bottom, 0px)); }
+  h1 { font-size:18px; margin:0 0 12px; }
+
+  .agora { border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:14px; background:var(--bg); }
+  .agora strong { font-size:16px; display:block; overflow-wrap:anywhere; }
+  #caminho { color:var(--muted); font-size:13px; margin:4px 0 8px; }
+
+  #player-container { width:100%; margin-top:8px; border-radius:6px; overflow:hidden; background:#000; display:none; }
+  #player { width:100%; display:block; }
+
+  .modo-video #player-container { display:block; aspect-ratio:16/9; max-height:420px; }
+  .modo-video #player { height:100%; object-fit:contain; }
+
+  .modo-audio #player-container { display:block; background:transparent; aspect-ratio:auto; }
+  .modo-audio #player { height:54px; }
+
+  #quadro-frame { display:none; width:100%; aspect-ratio:16/9; max-height:420px; border:0; border-radius:6px; margin-top:8px; }
+
+  .linha { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
+  .linha span { color:var(--muted); margin-right:4px; font-size:13px; }
+  button { font:inherit; color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; }
+  button:hover { background:var(--hover); }
+  button:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button.ativo { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); font-weight:600; }
+
+  .btn-tocar-pasta { font-size:12px; padding:3px 8px; border-radius:4px; border:1px solid var(--line); color:var(--accent); background:var(--bg); margin-left:8px; white-space:nowrap; }
+  .btn-tocar-pasta:hover { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+
+  #busca { width:100%; font:inherit; color:var(--fg); background:transparent; border:1px solid var(--line); border-radius:6px; padding:9px 12px; margin-bottom:10px; }
+  #biblioteca { border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+
+  details { border-bottom:1px solid var(--line); }
+  details details { border-bottom:0; border-top:1px solid var(--line); }
+  summary { cursor:pointer; padding:10px 12px; list-style:none; display:flex; align-items:center; gap:8px; }
+  summary::-webkit-details-marker { display:none; }
+  summary::before { content:"▸"; color:var(--muted); width:12px; flex-shrink:0; }
+  details[open] > summary::before { content:"▾"; }
+  summary:hover { background:var(--hover); }
+
+  .rot { flex:1; overflow-wrap:anywhere; }
+  .qtd { color:var(--muted); font-size:13px; margin-left:6px; }
+
+  .faixa-btn { display:flex; align-items:center; width:100%; text-align:left; border:0; border-radius:0; border-top:1px solid var(--line); padding:9px 12px; font-size:14px; gap:6px; }
+  .faixa-btn.ativo { font-weight:600; background:var(--hover); color:var(--accent); }
+  .icone-midia { font-size:13px; opacity:0.8; }
+
+  #status { font-size:13px; color:var(--muted); margin-top:6px; min-height:18px; }
+  #vazio { padding:16px; color:var(--muted); text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Resumos em áudio e vídeo</h1>
+
+  <div class="agora" id="bloco-reprodutor">
+    <strong id="titulo">Selecione uma faixa abaixo</strong>
+    <div id="caminho">Aguardando...</div>
+
+    <div id="player-container">
+      <video id="player" controls playsinline preload="auto"></video>
+    </div>
+
+    <iframe id="quadro-frame" allow="autoplay" title="Player Drive"></iframe>
+
+    <div id="status"></div>
+    <div class="linha" id="controles">
+      <button id="volta" type="button">−10s</button>
+      <button id="avanca" type="button">+10s</button>
+      <span>Velocidade:</span>
+      <span id="vels"></span>
+    </div>
+  </div>
+
+  <input id="busca" type="search" placeholder="Buscar por concurso, matéria ou tema">
+  <div id="biblioteca"><div id="vazio">Carregando mídias do Drive...</div></div>
+</div>
+
+<script>
+// SUA URL DO GOOGLE APPS SCRIPT
+const API_URL = "https://script.google.com/macros/s/AKfycbyUpzJdBcqP2pzqQTSf-ueg_pnp0v-xHXHDkydq-s4jn3b9JM3Dvyomn--QfC2WYB96dQ/exec";
+
+const VELOCIDADES = [0.75, 1, 1.25, 1.5, 1.75, 2];
+let AUDIOS = [];
+let playlistAtual = [];
+let indicePlaylist = -1;
+
+const $ = id => document.getElementById(id);
+const player = $("player");
+const blocoReprodutor = $("bloco-reprodutor");
+const frame = $("quadro-frame");
+
+function velocidade(v) {
+  player.playbackRate = v;
+  localStorage.setItem("vel", v);
+  document.querySelectorAll("#vels button").forEach(b => b.classList.toggle("ativo", Number(b.dataset.v) === v));
+}
+
+function proximaFaixa() {
+  if (indicePlaylist + 1 < playlistAtual.length) {
+    tocarFaixa(playlistAtual[indicePlaylist + 1], playlistAtual, indicePlaylist + 1, true);
+  }
+}
+function faixaAnterior() {
+  if (indicePlaylist > 0) {
+    tocarFaixa(playlistAtual[indicePlaylist - 1], playlistAtual, indicePlaylist - 1, true);
+  }
+}
+
+// Controles na tela de bloqueio / notificação do Android
+function configurarMediaSession(midiaObj) {
+  if (!("mediaSession" in navigator)) return;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: midiaObj.titulo,
+    artist: (midiaObj.caminho || []).join(" › ") || "Resumos",
+    album: "Resumos em Áudio",
+    artwork: [{ src: "icon-512.png", sizes: "512x512", type: "image/png" }]
+  });
+  const acoes = {
+    play: () => player.play(),
+    pause: () => player.pause(),
+    previoustrack: faixaAnterior,
+    nexttrack: proximaFaixa,
+    seekbackward: () => { player.currentTime = Math.max(0, player.currentTime - 10); },
+    seekforward: () => { player.currentTime = Math.min(player.duration || Infinity, player.currentTime + 10); }
+  };
+  for (const [acao, fn] of Object.entries(acoes)) {
+    try { navigator.mediaSession.setActionHandler(acao, fn); } catch (e) {}
+  }
+}
+
+async function tocarFaixa(midiaObj, fila = [], idx = 0, autoplay = true) {
+  playlistAtual = fila.length ? fila : [midiaObj];
+  indicePlaylist = idx;
+
+  $("titulo").textContent = (midiaObj.tipo === "video" ? "🎬 " : "🎵 ") + midiaObj.titulo;
+  $("caminho").textContent = (midiaObj.caminho || []).join(" › ");
+  $("status").textContent = "Carregando mídia...";
+  marcarAtiva(midiaObj.id);
+
+  player.pause();
+  player.removeAttribute("src");
+  player.load();
+
+  try {
+    const res = await fetch(`${API_URL}?action=media&id=${midiaObj.id}`);
+    const json = await res.json();
+
+    if (json.modo === "iframe") {
+      blocoReprodutor.className = "agora";
+      $("controles").style.display = "none";
+      frame.src = json.url;
+      frame.style.display = "block";
+      $("status").textContent = "Vídeo rodando pelo visualizador do Drive.";
+    } else if (json.dataUrl) {
+      frame.style.display = "none";
+      frame.removeAttribute("src");
+      $("controles").style.display = "flex";
+
+      blocoReprodutor.className = midiaObj.tipo === "video" ? "agora modo-video" : "agora modo-audio";
+
+      player.src = json.dataUrl;
+      const v = Number(localStorage.getItem("vel")) || 1;
+      player.onloadedmetadata = () => velocidade(v);
+      $("status").textContent = "";
+      configurarMediaSession(midiaObj);
+      if (autoplay) player.play().catch(() => {});
+    } else {
+      $("status").textContent = "Erro ao carregar mídia.";
+    }
+  } catch (err) {
+    $("status").textContent = "Erro de conexão ao buscar arquivo.";
+  }
+}
+
+function marcarAtiva(id) {
+  document.querySelectorAll("#biblioteca button[data-id]").forEach(b => {
+    b.classList.toggle("ativo", b.dataset.id === id);
+  });
+}
+
+function construirArvore(lista) {
+  const raiz = { pastas: new Map(), itens: [] };
+  lista.forEach(a => {
+    let atual = raiz;
+    (a.caminho || []).forEach(nomePasta => {
+      if (!atual.pastas.has(nomePasta)) {
+        atual.pastas.set(nomePasta, { pastas: new Map(), itens: [] });
+      }
+      atual = atual.pastas.get(nomePasta);
+    });
+    atual.itens.push(a);
+  });
+  return raiz;
+}
+
+function coletarTodos(no) {
+  let res = [...no.itens];
+  no.pastas.forEach(sub => { res = res.concat(coletarTodos(sub)); });
+  return res;
+}
+
+function renderizarNo(no, nivel, filtroAtivo) {
+  const container = document.createDocumentFragment();
+
+  no.pastas.forEach((subPasta, nome) => {
+    const todosDoSub = coletarTodos(subPasta);
+    if (!todosDoSub.length) return;
+
+    const d = document.createElement("details");
+    d.open = !!filtroAtivo;
+
+    const sum = document.createElement("summary");
+    sum.style.paddingLeft = `${12 + nivel * 16}px`;
+    if (nivel === 0) sum.style.fontWeight = "700";
+    else if (nivel === 1) sum.style.fontWeight = "600";
+
+    sum.innerHTML = `
+      <span class="rot">${nome}</span>
+      <span class="qtd">${todosDoSub.length} ${todosDoSub.length === 1 ? 'item' : 'itens'}</span>
+    `;
+
+    const btnPlay = document.createElement("button");
+    btnPlay.type = "button";
+    btnPlay.className = "btn-tocar-pasta";
+    btnPlay.textContent = "▶ Tocar";
+    btnPlay.title = `Tocar itens de "${nome}"`;
+    btnPlay.addEventListener("click", e => {
+      e.stopPropagation();
+      e.preventDefault();
+      tocarFaixa(todosDoSub[0], todosDoSub, 0, true);
+    });
+
+    sum.appendChild(btnPlay);
+    d.appendChild(sum);
+    d.appendChild(renderizarNo(subPasta, nivel + 1, filtroAtivo));
+    container.appendChild(d);
+  });
+
+  if (no.itens.length) {
+    no.itens.forEach(item => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "faixa-btn";
+      b.dataset.id = item.id;
+      b.style.paddingLeft = `${12 + (nivel + 1) * 16}px`;
+      b.innerHTML = `<span class="icone-midia">${item.tipo === "video" ? "🎬" : "🎵"}</span> <span>${item.titulo}</span>`;
+      b.addEventListener("click", () => {
+        const fila = coletarTodos(no);
+        const idx = fila.findIndex(x => x.id === item.id);
+        tocarFaixa(item, fila, idx, true);
+      });
+      container.appendChild(b);
+    });
+  }
+
+  return container;
+}
+
+function montar(filtro = "") {
+  const f = filtro.toLowerCase();
+  const filtrados = AUDIOS.filter(a => {
+    const texto = ((a.caminho || []).join(" ") + " " + a.titulo).toLowerCase();
+    return !f || texto.includes(f);
+  });
+
+  const raizEl = $("biblioteca");
+  raizEl.innerHTML = "";
+  if (!filtrados.length) {
+    raizEl.innerHTML = '<div id="vazio">Nenhum áudio ou vídeo encontrado.</div>';
+    return;
+  }
+
+  const arvore = construirArvore(filtrados);
+  raizEl.appendChild(renderizarNo(arvore, 0, !!f));
+}
+
+VELOCIDADES.forEach(v => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.dataset.v = v;
+  b.textContent = v + "x";
+  b.addEventListener("click", () => velocidade(v));
+  $("vels").appendChild(b);
+});
+
+$("volta").addEventListener("click", () => { player.currentTime = Math.max(0, player.currentTime - 10); });
+$("avanca").addEventListener("click", () => { player.currentTime = Math.min(player.duration || Infinity, player.currentTime + 10); });
+$("busca").addEventListener("input", e => montar(e.target.value));
+
+player.addEventListener("ended", proximaFaixa);
+
+async function carregarBiblioteca() {
+  try {
+    const res = await fetch(`${API_URL}?action=listar`);
+    AUDIOS = await res.json();
+    montar();
+  } catch (err) {
+    $("biblioteca").innerHTML = '<div id="vazio">Erro ao carregar lista de mídias.</div>';
+  }
+}
+
+carregarBiblioteca();
+
+// Registra o service worker (caminho relativo, funciona no GitHub Pages)
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
